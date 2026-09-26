@@ -1,6 +1,6 @@
 import z from "@deepseek-ai/schemastery";
-import { ComateCredential } from "dsh-connect-comate";
 import { Context } from "@deepseek-ai/cordis";
+import { ComateCredential } from "dsh-connect-comate";
 //#region src/contract.d.ts
 /**
  * The contract between this plugin's tools and its Comate client.
@@ -222,6 +222,8 @@ declare class ComateMediaClient implements ComateMediaApi {
 }
 //#endregion
 //#region src/comate/credential.d.ts
+/** The main plugin's runtime surface, resolved on first use. */
+type MainPluginModule = typeof import('dsh-connect-comate');
 /**
  * Overrides for {@link resolveComateCredential}.
  *
@@ -234,6 +236,8 @@ interface ResolveComateCredentialOptions {
   wpsSid?: string;
   /** Explicit config file, overriding the platform default. */
   configFile?: string;
+  /** Override for the main-plugin import, so tests can exercise a missing peer. */
+  loadMainPlugin?: () => Promise<MainPluginModule>;
   /** Explicit key file for a sealed sid. */
   secretKeyFile?: string;
   /** Skip the settings read entirely (for tests that only exercise the env path). */

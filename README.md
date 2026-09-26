@@ -7,10 +7,11 @@ WPS Comate 的图片与视频生成，作为 DSH 工具暴露给模型。
 
 ---
 
-## 一、设计说明：为什么是"库依赖"而不是"服务接缝"
+## 一、设计说明：为什么是"peer 依赖 + 自持协议"
 
-最初的设计是主插件 `ctx.provide('comateMedia', …)`，本插件 `inject: ['comateMedia']`。现在改成了
-**npm 依赖 + 自持协议**，理由有两条，都是实测出来的。
+这个结论被改过两次，两次都是被实测推翻的。最初是主插件 `ctx.provide('comateMedia', …)`、本插件
+`inject: ['comateMedia']`；第一次改成"硬 npm `dependencies` + 自持协议"；第二次——因为一个安装
+实验——改成了现在的形态：**peer 依赖 + 自持协议**。三条实测事实，按发现顺序。
 
 ### 1. 凭据只有主插件那一份，且媒体端点只认 cookie
 
@@ -38,21 +39,50 @@ WPS Comate 的图片与视频生成，作为 DSH 工具暴露给模型。
 - 安装期唯一的门是"有没有 bundle patch"——安装器只看**被装的这个包自己**；
 - **装上 ≠ 挂载**：包进了 `dependencies`，loader entry 也不会插入，entry 来自 bundle patch 层。
 
-也就是说「主插件没装就拒绝安装」在 DSH 里**做不到**；但把主插件写成 npm `dependencies`，
-「代码必然在」在 npm 层就自动成立了。
+也就是说「主插件没装就拒绝安装」在 DSH 里**做不到**。
 
-**这正是选库依赖的决定性理由**：服务接缝下「包在而服务不在」是一个 DSH 无法阻止的半装状态
-（只能靠 `inject` 或抛错把它变成显式失败）；库依赖下这个失败模式**直接消失**，剩下的唯一失败是
-「没登录」，而那本来就是一句模型能转述的人话。
+### 3. pnpm 11 默认禁止 git/tarball 形式的 subdependency
+
+上面那条本来指向"把主插件写成 `dependencies`，让「代码必然在」在 npm 层自动成立"。**这个推论是
+错的**，一个安装实验就把它推翻了：
+
+```
+ERR_PNPM_EXOTIC_SUBDEP  Exotic dependency "dsh-connect-comate"
+(resolved via git-repository) is not allowed in subdependencies
+when blockExoticSubdeps is enabled
+```
+
+pnpm 11 **默认**开启 `blockExoticSubdeps`（profile 里没设过它，`config get` 返回 `undefined`，
+所以这是默认值），它禁止 subdependency 使用 git / tarball / file 形式的"异形"依赖。而主插件
+**只能**以 git 形式安装——所以硬依赖边会让**安装本身失败**。四组对照实验：
+
+| 实验 | 形态 | 结果 |
+|---|---|---|
+| A | 主插件在 `dependencies`（git URL） | ❌ `ERR_PNPM_EXOTIC_SUBDEP` |
+| B | 主插件在 `dependencies`（**tarball URL**） | ❌ 同上（"resolved via url"） |
+| C | 主插件在 `peerDependencies` | ✅ 规则不触发——peer 不装，所以它不是 subdependency |
+| D | **真实形状**：宿主装主插件 + 本插件用 peer，`autoInstallPeers: false` | ✅ **干净装上，零环境改动、零 `allowBuilds`** |
+| E | 宿主没装主插件（peer 未满足） | ⚠️ 装成功，只有 `WARN Issues with peer dependencies found` |
+
+### 结论：peer 是正确形态
+
+改完安装干净通过（实验 D），而且 **peer 在语义上本来就更对**：主插件归**宿主**（profile）所有，
+本插件只是使用它；两个消费者共享**同一份** sealed 实现，而硬依赖边有可能装出**第二份**——那正是
+"两个插件开始对凭据是什么产生分歧"的隐患。**peer 恰好是防它的机制。**
+
+代价是**"拒绝安装"降级为"安装时 WARN + 加载时一句人话"**。这是 DSH 里能拿到的最强形态（跨插件
+依赖机制不存在，见 2）。为了不让这个代价变成 `ERR_MODULE_NOT_FOUND`，主插件的 import 是**动态**
+的，失败时抛出指名"该装哪个插件"的句子（`src/comate/credential.ts` 的 `loadMainPlugin`）。
 
 ### 两种方案对照
 
-| | 服务接缝 | 库依赖（现状） |
+| | 服务接缝 | peer 依赖（现状） |
 |---|---|---|
 | 主插件改动 | 需要新增 `comateMedia` 服务 | **零改动**，v0.5.1 原样 |
 | 凭据 owner | 主插件 | 主插件（经它的 `ComateCredentialStore`） |
-| 模块解析 | 无问题 | 需 git 依赖 + specifier 逐字对齐 |
-| "主插件没装" | DSH 无法阻止半装状态 | 不可能发生 |
+| 模块解析 | 无问题 | peer + 动态 import；宿主的 `nodeLinker: hoisted` 让它向上命中 |
+| "主插件没装" | DSH 无法阻止半装状态 | 安装 WARN + 加载时一句指名道姓的话 |
+| 可安装性 | 干净 | 干净（实验 D）——而硬 `dependencies` 边**装不上** |
 | 主插件重构影响 | 接口稳定 | 依赖 `ComateCredentialStore` 的公开导出面 |
 
 本插件要写的代码量两种方案差别很小——**媒体协议本来就得写在从插件里**（服务方案下是"调
@@ -63,21 +93,32 @@ WPS Comate 的图片与视频生成，作为 DSH 工具暴露给模型。
 ## 二、依赖与安装
 
 ```json
-"dependencies": {
+"peerDependencies": {
+  "dsh-connect-comate": ">=0.5.1 <0.6.0"
+},
+"devDependencies": {
   "dsh-connect-comate": "github:DiEr-TouShou/dsh-connect-comate#v0.5.1"
 }
 ```
 
-三条约束，都踩过：
+peer 那条是给消费者的声明；dev 那条只用于本地开发与测试，消费者不会拿到它。
 
-1. **specifier 必须与 profile 里那一条逐字相同**，pnpm 才会去重成同一份。不同 → 装出两份主插件
-   代码，而其中一份的 `enc:v1:` 封套格式可能已经过时，表现为"密文解不开"。
-2. **用 `dependencies`，不用 `peerDependencies`**。peer 在 pnpm 下运行时解析不到（本插件的 realpath
-   在 profile 之外时，Node 不会向上找到 profile 的 `node_modules`）。
-3. **主插件带 `prepack` 构建脚本**，新 commit 会触发 `allowBuilds` 白名单；管理器的失败界面有
-   「允许这些脚本并重试」，会把授权写进 profile 的 `pnpm-workspace.yaml`。
+四条约束：
 
-本插件自身也应作为 **git 依赖**装进 profile，realpath 才会落在 `.pnpm` 树里，上述解析才成立。
+1. **宿主必须自己装主插件。** desktop profile 里它本来就在（`dsh-connect-comate` 是 profile 的
+   直接依赖），peer 天然满足。宿主没装时 pnpm 只 WARN，本插件在**第一次调用**时才抛出那句指名
+   道姓的话——不是加载即崩。
+2. **peer 范围与主插件的公开导出面绑定。** 本插件用到的只有 `ComateCredentialStore`、
+   `unwrapVolatileDeep`、`COMATE_ENTRY_ID`、`COMATE_SID_ENV`、`COMATE_CONFIG_ENV`。0.6 起若这些
+   有变，需要重验并收紧范围。
+3. **不要写成 `dependencies`。** 哪怕 specifier 与 profile 里逐字相同也没用：pnpm 11 的
+   `blockExoticSubdeps` 会在安装期直接拒绝（见一.3）。
+4. **本插件自身以 git 依赖装进 profile。** profile 的 `nodeLinker: hoisted` 让
+   `dsh-connect-comate` 位于根 `node_modules`，本插件从 `.pnpm` 树里向上查找即可命中。
+
+**不需要 `allowBuilds`**：主插件的 `lib/` 已进 tag 且没有 `prepare`，pnpm 因此判定"无需构建"，
+`allowBuilds` 白名单与 PATH 上的 pnpm 都不再被需要（实验 D 全程没出现）。本插件的打包沿用同一
+约定，回归由 `pnpm run verify:release-tag` 守住。
 
 ---
 

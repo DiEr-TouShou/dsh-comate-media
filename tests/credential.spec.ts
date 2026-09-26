@@ -213,4 +213,37 @@ describe('resolveComateCredential', () => {
     await expect(failure).rejects.toThrow('sealed but cannot be decrypted')
     await expect(failure).rejects.toThrow(join(dir, 'absent-key'))
   })
+
+  it('names the missing main plugin when the peer cannot be imported', async () => {
+    // `dsh-connect-comate` is a peer, so it may genuinely be absent. The import
+    // is deferred for exactly this case: a static import would have failed at
+    // plugin load with ERR_MODULE_NOT_FOUND — loud, but with nothing in it the
+    // user or the model can act on.
+    const failure = resolveComateCredential(contextWithSettings(() => []), {
+      ignoreSettings: true,
+      loadMainPlugin: () => Promise.reject(new Error('ERR_MODULE_NOT_FOUND')),
+    })
+
+    await expect(failure).rejects.toThrow('the dsh-connect-comate plugin is not installed')
+    await expect(failure).rejects.toThrow('install dsh-connect-comate')
+    // The raw resolution error must not be what the model is handed.
+    await expect(failure).rejects.not.toThrow('ERR_MODULE_NOT_FOUND')
+  })
+
+  it('honours an injected loader even after the real module has been cached', async () => {
+    // A regression guard with a real origin: the cache is process-global, so an
+    // earlier test that resolved the real module used to make every later
+    // injected loader a no-op — which quietly turned this missing-peer test
+    // into a present-peer test.
+    await resolveComateCredential(contextWithSettings(() => []), { ignoreSettings: true, wpsSid: 'sid' })
+
+    const loadMainPlugin = vi.fn(() => Promise.reject(new Error('ERR_MODULE_NOT_FOUND')))
+
+    await expect(resolveComateCredential(contextWithSettings(() => []), {
+      ignoreSettings: true,
+      loadMainPlugin,
+    })).rejects.toThrow('is not installed')
+
+    expect(loadMainPlugin).toHaveBeenCalledTimes(1)
+  })
 })

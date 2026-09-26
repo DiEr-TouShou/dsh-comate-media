@@ -3,9 +3,11 @@
  *
  * The plugin owns the two tools, the Comate media protocol, and — through the
  * main plugin's own credential store — the credential. `dsh-connect-comate` is
- * a hard `dependencies` entry, not a service this plugin hopes to find running:
- * DSH has no cross-plugin dependency mechanism, so a service seam could be
- * absent at runtime with nothing to prevent it (see `./contract.ts`).
+ * a **peer** dependency: the host installs it, and this plugin imports it
+ * lazily so that a missing peer yields a sentence naming what to install rather
+ * than a module-resolution error. See `./comate/credential.ts` for why it cannot
+ * be a regular `dependencies` edge (pnpm blocks exotic subdependencies) and why
+ * the host is the right owner anyway.
  *
  * The one design decision worth stating up front: this plugin injects `tools`
  * ONLY, and resolves the credential lazily on every call. Read per call, not

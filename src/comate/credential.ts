@@ -16,8 +16,24 @@
  * than re-implemented here. That class owns the envelope format, the key file,
  * and the config-file probe order, and a second implementation of a sealed
  * format is exactly how two plugins start disagreeing about what a credential
- * is. It is also why `dsh-connect-comate` is a hard `dependencies` entry of
- * this package rather than an optional peer: the import must resolve.
+ * is.
+ *
+ * `dsh-connect-comate` is a **peer** dependency, and the import below is
+ * dynamic because of it. Two reasons, one forced and one by choice:
+ *
+ *   - Forced: pnpm 11 blocks exotic (git / tarball / file) **sub**dependencies
+ *     by default (`blockExoticSubdeps`), and `dsh-connect-comate` is only
+ *     installable as a git dependency. A `dependencies` edge therefore fails
+ *     the install outright — measured, both as a git URL and as a tarball URL.
+ *   - By choice: a peer is the right model anyway. The host owns the main
+ *     plugin; this one only uses it, and two consumers of a sealed-format
+ *     implementation should share ONE instance rather than risk a second copy
+ *     drifting out of sync.
+ *
+ * The cost of a peer is that the module may not resolve. A static import would
+ * turn that into `ERR_MODULE_NOT_FOUND` at plugin load — loud but unactionable
+ * — so the import is deferred into {@link loadMainPlugin}, which converts it
+ * into a sentence naming the missing plugin and what to do about it.
  *
  * Precedence is the main plugin's own — the settings value is applied as the
  * store's override, and the store falls back to the environment — so a user
@@ -27,8 +43,51 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import { COMATE_CONFIG_ENV, COMATE_SID_ENV, ComateCredentialStore } from 'dsh-connect-comate'
-import type { ComateCredential, ComateSidResolution } from 'dsh-connect-comate'
+import type { ComateCredential, ComateCredentialStore, ComateSidResolution } from 'dsh-connect-comate'
+
+/** The main plugin's runtime surface, resolved on first use. */
+type MainPluginModule = typeof import('dsh-connect-comate')
+
+/** The resolved module, cached across calls. */
+let mainPlugin: MainPluginModule | undefined
+
+/** What the model is told when the main plugin is not installed at all. */
+const MISSING_MAIN_PLUGIN = 'WPS Comate media generation is unavailable: the dsh-connect-comate plugin is not '
+  + 'installed in this DSH profile. This plugin deliberately keeps no copy of the credential machinery — the '
+  + 'sealed sid format and its key file belong to dsh-connect-comate alone — so it has nothing to read the sid '
+  + 'with. Ask the user to install dsh-connect-comate, then sign in on its settings card.'
+
+/**
+ * Load the main plugin, or explain why the credential cannot be read.
+ *
+ * The default path caches on success and **not** on failure: a missing peer
+ * cannot appear mid-process (DSH loads plugins at boot), but caching a rejected
+ * promise would make one unlucky first call poison every later one for no
+ * benefit.
+ *
+ * An explicit `load` override runs unconditionally and touches neither side of
+ * the cache. That is not a detail of the test seam — it is the only way the
+ * seam works at all: the cache is process-global, so a caller injecting a
+ * loader would otherwise get the real module back the moment any earlier call
+ * had succeeded, and a test for the missing-peer path would silently be testing
+ * the present-peer path instead. (It was, until this comment existed.)
+ *
+ * @param load - override for tests; defaults to a real dynamic import.
+ * @returns the main plugin's exports.
+ * @throws {Error} with a message written for the model to relay.
+ */
+async function loadMainPlugin(
+  load?: () => Promise<MainPluginModule>,
+): Promise<MainPluginModule> {
+  if (load === undefined && mainPlugin !== undefined) return mainPlugin
+  try {
+    const resolved = await (load ?? (() => import('dsh-connect-comate')))()
+    if (load === undefined) mainPlugin = resolved
+    return resolved
+  } catch {
+    throw new Error(MISSING_MAIN_PLUGIN)
+  }
+}
 
 /** The profile entry id the main plugin registers its settings section under. */
 export const COMATE_SETTINGS_ENTRY = 'dsh-connect-comate'
@@ -118,6 +177,8 @@ export interface ResolveComateCredentialOptions {
   wpsSid?: string
   /** Explicit config file, overriding the platform default. */
   configFile?: string
+  /** Override for the main-plugin import, so tests can exercise a missing peer. */
+  loadMainPlugin?: () => Promise<MainPluginModule>
   /** Explicit key file for a sealed sid. */
   secretKeyFile?: string
   /** Skip the settings read entirely (for tests that only exercise the env path). */
@@ -140,10 +201,14 @@ export async function resolveComateCredential(
   ctx: Context,
   options: ResolveComateCredentialOptions = {},
 ): Promise<ComateCredential> {
+  const main = options.loadMainPlugin === undefined
+    ? await loadMainPlugin()
+    : await loadMainPlugin(options.loadMainPlugin)
+
   // Built empty and then pointed at the overrides, rather than passed through
   // the constructor: `exactOptionalPropertyTypes` rejects a conditional spread
   // whose branches have different shapes, and two setters read better anyway.
-  const store = new ComateCredentialStore()
+  const store = new main.ComateCredentialStore()
   if (options.configFile !== undefined) store.setConfigFile(options.configFile)
   if (options.secretKeyFile !== undefined) store.setSecretKeyFile(options.secretKeyFile)
 
@@ -155,7 +220,7 @@ export async function resolveComateCredential(
   if (credential === undefined) {
     throw new Error(
       'WPS Comate media generation is unavailable: no Comate config file could be read, so there is no '
-      + `gateway to call. Expected one at the platform default path, or set ${COMATE_CONFIG_ENV} to point at it.`,
+      + `gateway to call. Expected one at the platform default path, or set ${main.COMATE_CONFIG_ENV} to point at it.`,
     )
   }
   if (isUsableCookie(credential.cookie)) return credential
@@ -163,7 +228,7 @@ export async function resolveComateCredential(
   // The config file answered, but with the placeholder the desktop client ships
   // instead of a real cookie — so the failure is "no sid", not "no config", and
   // the message has to say which of the two things to fix.
-  throw new Error(await describeMissingSid(store))
+  throw new Error(await describeMissingSid(store, main.COMATE_SID_ENV))
 }
 
 /**
@@ -190,9 +255,11 @@ function isUsableCookie(cookie: string | undefined): boolean {
  * difference.
  *
  * @param store - the store the read went through.
+ * @param sidEnv - the environment variable name to name in the message, taken
+ *   from the main plugin so the two plugins never quote different names.
  * @returns the message for the tool failure.
  */
-async function describeMissingSid(store: ComateCredentialStore): Promise<string> {
+async function describeMissingSid(store: ComateCredentialStore, sidEnv: string): Promise<string> {
   let resolution: ComateSidResolution | undefined
   try {
     resolution = await store.resolveSid()
@@ -211,5 +278,5 @@ async function describeMissingSid(store: ComateCredentialStore): Promise<string>
   return 'WPS Comate media generation needs a wps_sid, and none is configured. The Comate desktop config file only '
     + 'carries a placeholder cookie, which the gateway rejects — and it rejects the api key too, so the cookie is '
     + `the only credential that works here. Ask the user to fill the wps_sid field on the dsh-connect-comate plugin `
-    + `card, or to set ${COMATE_SID_ENV} in the environment (headless runs).`
+    + `card, or to set ${sidEnv} in the environment (headless runs).`
 }

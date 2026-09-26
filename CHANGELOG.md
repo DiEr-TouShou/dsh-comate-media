@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.1.1-rc.1 (2026-09-27)
+
+### Fixed
+
+- **主插件从 `dependencies` 改为 `peerDependencies`。** v0.1.0 实际上**装不上**：pnpm 11 默认开启
+  `blockExoticSubdeps`，禁止 subdependency 使用 git / tarball / file 形式的异形依赖，而主插件
+  **只能**以 git 形式安装。报错 `ERR_PNPM_EXOTIC_SUBDEP`；换成 tarball URL 一样被拒
+  （"resolved via url"）。改成 peer 后安装干净通过——零环境改动、零 `allowBuilds`。
+- 主插件的 import 改为**动态**，失败时抛出指名"该装哪个插件"的句子，而不是让
+  `ERR_MODULE_NOT_FOUND` 在加载期炸出来。`resolveComateCredential` 本就 async，所以这个改动
+  只落在一个函数里。
+- 修了一个由新测试暴露出来的真 bug：`loadMainPlugin` 的进程级缓存会**短路注入的 loader**，
+  于是任何早先调用成功过之后，"缺主插件"的测试实际上在测"主插件存在"的路径。现在显式
+  override 无条件执行，且不读写缓存。
+
+### Changed
+
+- `peerDependencies` 声明 `dsh-connect-comate >=0.5.1 <0.6.0`；`devDependencies` 保留 git 形式
+  供本地开发与测试。消费者不再拿到那条 git 依赖。
+- README 第一节重写：记录结论被推翻两次的过程，以及五组安装对照实验（A–E）。
+
+### Verified
+
+- 离线 **50** 用例（3 文件）全绿，含新增的两条：缺 peer 时给出的是那句人话、以及显式 override
+  不会被缓存短路。
+- 真机 `verify:live` 通过（`ProduceID=TC7A2F9A4`，`image/jpeg`）——确认动态 import 没有破坏
+  凭据链。
+- 安装实测（pnpm 11.7.0）：宿主装主插件 + 本插件用 peer → 干净装上。
+
 ## 0.1.0 (2026-09-27)
 
 首个版本。把 WPS Comate 的**图片与视频生成**以两个工具暴露给 DSH：

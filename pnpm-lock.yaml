@@ -11,9 +11,6 @@ importers:
       '@deepseek-ai/schemastery':
         specifier: 3.18.4
         version: 3.18.4
-      dsh-connect-comate:
-        specifier: github:DiEr-TouShou/dsh-connect-comate#v0.5.1
-        version: https://codeload.github.com/DiEr-TouShou/dsh-connect-comate/tar.gz/35e4e0c79270d2e8aba530a7226aa47ee4f70e51(@deepseek-ai/cordis@4.0.4)(@deepseek-ai/dsh-client-locale@0.1.7-rc.2(@deepseek-ai/cordis@4.0.4))(@deepseek-ai/dsh-client-ui-primitives@0.1.7-rc.2(@deepseek-ai/cordis@4.0.4))(@deepseek-ai/dsh-client-ui-settings-plugins@0.1.7-rc.2(@deepseek-ai/cordis@4.0.4))(@deepseek-ai/dsh-client-ui-settings@0.1.7-rc.2(@deepseek-ai/cordis@4.0.4))(@deepseek-ai/dsh-client-ui-slots@0.1.7-rc.2(@deepseek-ai/cordis@4.0.4))(@deepseek-ai/dsh-llm-pi-ai@0.1.7-rc.2(b5238911dd2db2e20c3a10774b078e89))(@deepseek-ai/dsh-llm@0.1.7-rc.1(@deepseek-ai/cordis@4.0.4))(@deepseek-ai/dsh-settings@0.1.7-rc.2(12bf3b821ab486ce14a74f8cf114fedf))(@deepseek-ai/schemastery@3.18.4)(@earendil-works/pi-ai@0.85.1(ws@8.21.3)(zod@4.6.5))(react@18.3.1)
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: 4.0.4
@@ -30,6 +27,9 @@ importers:
       '@types/node':
         specifier: ^22.20.0
         version: 22.20.4
+      dsh-connect-comate:
+        specifier: github:DiEr-TouShou/dsh-connect-comate#v0.5.1
+        version: https://codeload.github.com/DiEr-TouShou/dsh-connect-comate/tar.gz/35e4e0c79270d2e8aba530a7226aa47ee4f70e51(@deepseek-ai/cordis@4.0.4)(@deepseek-ai/dsh-client-locale@0.1.7-rc.2(@deepseek-ai/cordis@4.0.4))(@deepseek-ai/dsh-client-ui-primitives@0.1.7-rc.2(@deepseek-ai/cordis@4.0.4))(@deepseek-ai/dsh-client-ui-settings-plugins@0.1.7-rc.2(@deepseek-ai/cordis@4.0.4))(@deepseek-ai/dsh-client-ui-settings@0.1.7-rc.2(@deepseek-ai/cordis@4.0.4))(@deepseek-ai/dsh-client-ui-slots@0.1.7-rc.2(@deepseek-ai/cordis@4.0.4))(@deepseek-ai/dsh-llm-pi-ai@0.1.7-rc.2(b5238911dd2db2e20c3a10774b078e89))(@deepseek-ai/dsh-llm@0.1.7-rc.1(@deepseek-ai/cordis@4.0.4))(@deepseek-ai/dsh-settings@0.1.7-rc.2(12bf3b821ab486ce14a74f8cf114fedf))(@deepseek-ai/schemastery@3.18.4)(@earendil-works/pi-ai@0.85.1(ws@8.21.3)(zod@4.6.5))(react@18.3.1)
       tsdown:
         specifier: ^0.22.2
         version: 0.22.14(typescript@5.9.3)
@@ -1551,7 +1551,7 @@ snapshots:
       '@aws-sdk/types': 3.974.6
       '@smithy/core': 3.35.0
       '@smithy/fetch-http-handler': 5.8.0
-      '@smithy/node-http-handler': 4.7.3
+      '@smithy/node-http-handler': 4.12.1
       '@smithy/types': 4.19.0
       tslib: 2.8.1
 
