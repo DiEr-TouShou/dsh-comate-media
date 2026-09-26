@@ -1,0 +1,11 @@
+# Register the Comate media tools.
+#
+# No ordering constraint against `dsh-connect-comate`: this plugin does not call
+# a service that plugin provides. It imports that package (a hard dependency)
+# and reads the credential out of its settings document at call time, so the two
+# entries can mount in either order — and a call made while no credential is
+# configured fails with a sentence naming the field to fill in, rather than with
+# a tool that is silently missing.
+- insert:
+    - id: dsh-comate-media
+      name: dsh-comate-media
