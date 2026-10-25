@@ -1,5 +1,11 @@
 # dsh-comate-media
 
+> **当前工作树适配目标：DSH `v0.2.1-rc.3`。** `engines.dsh` 与 DSH peer 范围为
+> `>=0.2.1-rc.3 <0.2.2-0`。默认输出目录优先读取 `workingDirectory.get(session)`，
+> 因此会跟随会话目录切换；没有服务时读取投影，再退回初始目录和临时目录。
+> 本版本为 `0.2.0`，要求主插件 `0.6.x`；开发依赖固定到主插件 GitHub `v0.6.0`。
+> 下文旧版 DSH 的实验与降级表属于历史记录。升级两个插件后重启 DSH。
+
 WPS Comate 的图片与视频生成，作为 DSH 工具暴露给模型。
 
 这是一个**从插件**：Comate 的媒体协议由它自己实现，它只从主插件 `dsh-connect-comate` 借一样东西——
@@ -94,14 +100,15 @@ pnpm 11 **默认**开启 `blockExoticSubdeps`（profile 里没设过它，`confi
 
 ```json
 "peerDependencies": {
-  "dsh-connect-comate": ">=0.5.1 <0.6.0"
+  "dsh-connect-comate": ">=0.6.0 <0.7.0"
 },
 "devDependencies": {
-  "dsh-connect-comate": "github:DiEr-TouShou/dsh-connect-comate#v0.5.1"
+  "dsh-connect-comate": "github:DiEr-TouShou/dsh-connect-comate#v0.6.0"
 }
 ```
 
 peer 那条是给消费者的声明；dev 那条只用于本地开发与测试，消费者不会拿到它。
+需要同时修改两个仓库时，可临时把开发依赖改为 `link:../dsh-connect-comate`；正式发布固定到上述 tag。
 
 四条约束：
 
@@ -109,7 +116,7 @@ peer 那条是给消费者的声明；dev 那条只用于本地开发与测试�
    直接依赖），peer 天然满足。宿主没装时 pnpm 只 WARN，本插件在**第一次调用**时才抛出那句指名
    道姓的话——不是加载即崩。
 2. **peer 范围与主插件的公开导出面绑定。** 本插件用到的只有 `ComateCredentialStore`、
-   `unwrapVolatileDeep`、`COMATE_ENTRY_ID`、`COMATE_SID_ENV`、`COMATE_CONFIG_ENV`。0.6 起若这些
+   `unwrapVolatileDeep`、`COMATE_ENTRY_ID`、`COMATE_SID_ENV`、`COMATE_CONFIG_ENV`。0.7 起若这些
    有变，需要重验并收紧范围。
 3. **不要写成 `dependencies`。** 哪怕 specifier 与 profile 里逐字相同也没用：pnpm 11 的
    `blockExoticSubdeps` 会在安装期直接拒绝（见一.3）。
@@ -232,7 +239,7 @@ src/
 
 ## 七、展示链路
 
-- **图片**：字节 → `ctx.attachments.saveImages()` → 宿主渲染。可选留一份本地副本（`saveToDisk`）。
+- **图片**：字节 → `ctx.attachments.saveImage()` → 宿主渲染。可选留一份本地副本（`saveToDisk`）。
 - **视频**：**没有可聊内渲染的形态**——DSH 的 markdown 管线只重写图片目标，通用工具卡也不渲染播放器。
   唯一的一等公民路径是 `deliverables/presented` Session 事件（`dsh-tool-present` 的机制），客户端据此
   给出"可打开"的卡片。所以本地文件**就是**交付物：视频**总是**落盘并声明为 deliverable，
@@ -275,7 +282,7 @@ saveToDisk: true        # 是否给图片留一份本地副本（视频不受此
 
 ---
 
-## 十、两条 DSH 线的降级
+## 十、历史记录：两条 DSH 线的降级
 
 | 能力 | 0.1.7（宿主实测 0.1.7-rc.2） | 0.1.5 |
 |---|---|---|
@@ -290,10 +297,14 @@ saveToDisk: true        # 是否给图片留一份本地副本（视频不受此
 
 ## 十一、开发
 
+开发依赖固定到 `dsh-connect-comate v0.6.0`。当前离线套件为 56 个测试（4 个文件），
+包含新版注册表、附件与交付物契约，以及图片和视频跟随当前会话目录的验证。
+下面「已验证 / 未验证」保留最初版本的实测记录；当前工作树尚未做真实生图、生视频或宿主安装验证。
+
 ```bash
 pnpm install
 pnpm run typecheck   # tsc -p tsconfig.json
-pnpm run test        # 48 个用例（3 个文件）
+pnpm run test        # 当前工作树：56 个用例（4 个文件）
 pnpm run build       # tsdown → lib/
 ```
 
@@ -317,7 +328,7 @@ pnpm run build       # tsdown → lib/
 
 ## 十二、已验证 / 未验证
 
-**已验证（48 个用例全绿）**：工具注册契约与两个 JSON Schema、参数透传、attachment 提交
+**初版验证记录（48 个用例全绿）**：工具注册契约与两个 JSON Schema、参数透传、attachment 提交
 （用**嗅探出的** jpeg，不是网关声称的 octet-stream）、落盘字节、deliverable 声明、图片块渲染、
 五条降级路径（缺客户端 / 缺附件服务 / 关落盘 / 无开启 turn / 空 prompt）、deadline 竞速、
 调用方取消不被改写、上游失败原样透传；媒体协议的提交体与鉴权头、`url` 与 `b64_json` 两条载荷、

@@ -43,7 +43,11 @@ interface SessionLike {
 
 /** The slice of `ctx.sessionProjections` this module reads. */
 interface SessionProjectionsLike {
-  stateOf?: (session: unknown, name: string) => { lastTurn?: number; openTurnStartSeq?: number | null } | undefined
+  stateOf?: (session: unknown, name: string) => unknown
+}
+
+interface WorkingDirectoryLike {
+  get(session: unknown): string
 }
 
 /**
@@ -57,8 +61,16 @@ interface SessionProjectionsLike {
  * @param agent - `exec.agent`, possibly absent for direct or nested callers.
  * @returns the absolute working directory, or `undefined`.
  */
-export function readSessionCwd(agent: unknown): string | undefined {
+export function readSessionCwd(agent: unknown, ctx?: Context): string | undefined {
   const session = (agent as AgentLike | undefined)?.session
+  if (session === undefined) return undefined
+  // Since 0.2.1 the immutable header is only the original project directory.
+  // Prefer the service (which also owns the deployment fallback), then the
+  // committed projection for compositions without that service.
+  const workingDirectory = ctx?.get('workingDirectory') as WorkingDirectoryLike | undefined
+  const projections = ctx?.get('sessionProjections') as SessionProjectionsLike | undefined
+  const current = workingDirectory?.get(session) ?? projections?.stateOf?.(session, 'workingDirectory')
+  if (typeof current === 'string' && current.length > 0) return current
   const cwd = session?.header?.cwd
   return typeof cwd === 'string' && cwd.length > 0 ? cwd : undefined
 }
@@ -88,7 +100,8 @@ export function publishDeliverables(
     const session = (agent as AgentLike | undefined)?.session
     if (session?.append === undefined) return false
     const projections = ctx.get('sessionProjections') as SessionProjectionsLike | undefined
-    const boundary = projections?.stateOf?.(session, 'turnBoundary')
+    const boundary = projections?.stateOf?.(session, 'turnBoundary') as
+      { lastTurn?: number; openTurnStartSeq?: number | null } | undefined
     if (boundary === undefined) return false
     const turn = boundary.lastTurn
     if (turn === undefined || boundary.openTurnStartSeq === null || boundary.openTurnStartSeq === undefined) return false

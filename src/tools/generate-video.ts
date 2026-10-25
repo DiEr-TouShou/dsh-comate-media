@@ -115,7 +115,7 @@ export function registerGenerateVideo(ctx: Context, options: GenerateVideoOption
       // Always on disk: see the module note. The attachment store cannot hold a
       // video (audio and video have no dedicated handling there yet), so a
       // file-less video would be a result nobody can open.
-      const dir = options.outputDir ?? readSessionCwd(exec.agent) ?? tmpdir()
+      const dir = options.outputDir ?? readSessionCwd(exec.agent, ctx) ?? tmpdir()
       const saved = await saveGeneratedMedia({
         dir,
         bytes: generated.bytes,

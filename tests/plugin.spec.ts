@@ -55,6 +55,8 @@ interface AnyTool {
 
 /** Harness inputs. */
 interface HarnessOptions {
+  sessionOutput: boolean
+  workingDirectory: string | undefined
   imageTimeoutMs: number
   videoTimeoutMs: number
   saveToDisk: boolean
@@ -78,6 +80,8 @@ interface HarnessOptions {
 
 /** The shipped-behavior defaults, so a test states only what it changes. */
 const DEFAULTS: HarnessOptions = {
+  sessionOutput: false,
+  workingDirectory: undefined,
   imageTimeoutMs: 5_000,
   videoTimeoutMs: 5_000,
   saveToDisk: true,
@@ -128,6 +132,15 @@ async function createHarness(overrides: Partial<HarnessOptions> = DEFAULTS): Pro
 
   const ctx = new Context()
 
+  if (options.workingDirectory !== undefined) {
+    await ctx.plugin({
+      name: 'test-working-directory',
+      apply(fiber: Context) {
+        fiber.provide('workingDirectory', { get: () => options.workingDirectory })
+      },
+    })
+  }
+
   // `dsh-tools` injects `systemPrompt`; a structural double satisfies it.
   await ctx.plugin({
     name: 'test-system-prompt',
@@ -162,7 +175,7 @@ async function createHarness(overrides: Partial<HarnessOptions> = DEFAULTS): Pro
   }
 
   const config = {
-    outputDir: dir,
+    outputDir: options.sessionOutput ? '' : dir,
     imageTimeoutMs: options.imageTimeoutMs,
     videoTimeoutMs: options.videoTimeoutMs,
     saveToDisk: options.saveToDisk,
@@ -206,6 +219,24 @@ async function createHarness(overrides: Partial<HarnessOptions> = DEFAULTS): Pro
     },
   }
 }
+
+describe('current Session output directory', () => {
+  it.each([GENERATE_IMAGE_TOOL, GENERATE_VIDEO_TOOL])('writes %s into the current directory', async (name) => {
+    const current = await mkdtemp(join(tmpdir(), 'dsh-current-cwd-'))
+    created.push(current)
+    const harness = await createHarness({ sessionOutput: true, workingDirectory: current })
+    const value = await harness.tool(name).execute({ prompt: 'a cat' }, harness.execution())
+    expect(value.path.startsWith(current)).toBe(true)
+    expect((await readFile(value.path)).byteLength).toBeGreaterThan(0)
+    expect(harness.session.events[0]?.payload).toMatchObject({ files: [{ path: value.path }] })
+  })
+
+  it('keeps an explicit outputDir ahead of the Session directory', async () => {
+    const harness = await createHarness({ workingDirectory: '/unused-session-directory' })
+    const value = await harness.tool(GENERATE_IMAGE_TOOL).execute({ prompt: 'a cat' }, harness.execution())
+    expect(value.path.startsWith(harness.dir)).toBe(true)
+  })
+})
 
 describe('registration', () => {
   it('registers both tools with the model-facing parameter contract', async () => {

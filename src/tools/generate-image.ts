@@ -122,7 +122,7 @@ export function registerGenerateImage(ctx: Context, options: GenerateImageOption
       const deadline = withDeadline(exec.signal, options.timeoutMs)
       const generated = await generate(options.api, request, deadline)
 
-      const dir = resolveOutputDir(options, exec.agent)
+      const dir = resolveOutputDir(options, exec.agent, ctx)
       const saved = dir === undefined
         ? undefined
         : await saveGeneratedMedia({
@@ -211,9 +211,10 @@ async function generate(
 function resolveOutputDir(
   options: GenerateImageOptions,
   agent: unknown,
+  ctx: Context,
 ): string | undefined {
   if (!options.saveToDisk) return undefined
-  return options.outputDir ?? readSessionCwd(agent) ?? tmpdir()
+  return options.outputDir ?? readSessionCwd(agent, ctx) ?? tmpdir()
 }
 
 /** Final path segment, without importing `node:path` for one call. */
